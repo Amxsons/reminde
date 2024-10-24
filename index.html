@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timely Reminders</title>
+    
+    <!-- Import Firebase using CDN -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .auth-section, .reminder-section {
+            margin-bottom: 20px;
+        }
+        input, button {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .reminder-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .reminder-item button {
+            background-color: #f44336;
+        }
+        .reminder-item button:hover {
+            background-color: #da190b;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Timely Reminders</h1>
+        
+        <div id="authSection" class="auth-section">
+            <h2>Authentication</h2>
+            <div id="signInForm">
+                <input type="email" id="email" placeholder="Email">
+                <input type="password" id="password" placeholder="Password">
+                <button onclick="signIn()">Sign In</button>
+                <button onclick="signUp()">Sign Up</button>
+            </div>
+            <div id="userInfo" class="hidden">
+                <p>Logged in as: <span id="userEmail"></span></p>
+                <button onclick="signOut()">Sign Out</button>
+            </div>
+        </div>
+
+        <div id="reminderSection" class="reminder-section hidden">
+            <h2>Add Reminder</h2>
+            <input type="text" id="reminderText" placeholder="Reminder text">
+            <input type="datetime-local" id="reminderTime">
+            <button onclick="addReminder()">Add Reminder</button>
+
+            <h2>Your Reminders</h2>
+            <div id="reminderList"></div>
+        </div>
+    </div>
+
+    <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyByUHgdwJr4Jkv-20OVukkbe64K3K08bnA",
+            authDomain: "reminder-5112a.firebaseapp.com",
+            projectId: "reminder-5112a",
+            storageBucket: "reminder-5112a.appspot.com",
+            messagingSenderId: "339512485168",
+            appId: "1:339512485168:web:5e74987e0c0a9ca37754f5"
+          };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Auth state observer
+        auth.onAuthStateChanged((user) => {
+            const authSection = document.getElementById('authSection');
+            const signInForm = document.getElementById('signInForm');
+            const userInfo = document.getElementById('userInfo');
+            const reminderSection = document.getElementById('reminderSection');
+            
+            if (user) {
+                document.getElementById('userEmail').textContent = user.email;
+                signInForm.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                reminderSection.classList.remove('hidden');
+                loadReminders();
+            } else {
+                signInForm.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+                reminderSection.classList.add('hidden');
+            }
+        });
+
+        // Sign In
+        async function signIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                alert('Error signing in: ' + error.message);
+            }
+        }
+
+        // Sign Up
+        async function signUp() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                await auth.createUserWithEmailAndPassword(email, password);
+            } catch (error) {
+                alert('Error signing up: ' + error.message);
+            }
+        }
+
+        // Sign Out
+        function signOut() {
+            auth.signOut();
+        }
+
+        // Add Reminder - Modified version
+        async function addReminder() {
+            const user = auth.currentUser;
+            if (!user) {
+                alert('Please sign in first');
+                return;
+            }
+
+            const reminderText = document.getElementById('reminderText').value;
+            const reminderTime = document.getElementById('reminderTime').value;
+            
+            if (!reminderText || !reminderTime) {
+                alert('Please fill in both fields');
+                return;
+            }
+
+            try {
+                // Add reminder with explicit permissions check
+                const reminderData = {
+                    userId: user.uid,
+                    text: reminderText,
+                    time: reminderTime,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                await db.collection('reminders').add(reminderData);
+                
+                document.getElementById('reminderText').value = '';
+                document.getElementById('reminderTime').value = '';
+                await loadReminders();
+                
+            } catch (error) {
+                console.error('Error details:', error);
+                if (error.code === 'permission-denied') {
+                    alert('Permission denied. Please make sure you are properly signed in.');
+                } else {
+                    alert('Error adding reminder: ' + error.message);
+                }
+            }
+        }
+         // Load Reminders - Modified version
+         async function loadReminders() {
+            const user = auth.currentUser;
+            if (!user) {
+                console.log('No user signed in');
+                return;
+            }
+
+            const reminderList = document.getElementById('reminderList');
+            reminderList.innerHTML = '';
+
+            try {
+                const snapshot = await db.collection('reminders')
+                    .where('userId', '==', user.uid)
+                    .orderBy('time')
+                    .get();
+
+                if (snapshot.empty) {
+                    reminderList.innerHTML = '<p>No reminders yet. Add your first reminder!</p>';
+                    return;
+                }
+
+                snapshot.forEach((doc) => {
+                    const reminder = doc.data();
+                    const div = document.createElement('div');
+                    div.className = 'reminder-item';
+                    div.innerHTML = `
+                        <span>${reminder.text} - ${new Date(reminder.time).toLocaleString()}</span>
+                        <button onclick="deleteReminder('${doc.id}')">Delete</button>
+                    `;
+                    reminderList.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error details:', error);
+                if (error.code === 'permission-denied') {
+                    alert('Permission denied. Please make sure you are properly signed in.');
+                } else if (error.code === 'failed-precondition') {
+                    alert('Database not properly configured. Please check Firebase Console for required indexes.');
+                } else {
+                    alert('Error loading reminders: ' + error.message);
+                }
+            }
+        }
+
+
+         // Delete Reminder - Modified version
+         async function deleteReminder(reminderId) {
+            const user = auth.currentUser;
+            if (!user) {
+                alert('Please sign in first');
+                return;
+            }
+
+            try {
+                await db.collection('reminders').doc(reminderId).delete();
+                await loadReminders();
+            } catch (error) {
+                console.error('Error details:', error);
+                if (error.code === 'permission-denied') {
+                    alert('Permission denied. Please make sure you are properly signed in.');
+                } else {
+                    alert('Error deleting reminder: ' + error.message);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
